@@ -27,9 +27,10 @@
 #include <phTmlNfc.h>
 #include <phDnldNfc.h>
 #if(NXP_EXTNS == TRUE)
+#include <cutils/properties.h>
 #include "phNxpNciHal_nciParser.h"
+#include "phNxpNciHal.h"
 #endif
-
 /* Timeout value to wait for response from PN548AD */
 #define HAL_EXTNS_WRITE_RSP_TIMEOUT (1000)
 
@@ -270,8 +271,12 @@ NFCSTATUS phNxpNciHal_process_ext_rsp(uint8_t* p_ntf, uint16_t* p_len) {
     }
   }
   phNxpNciHal_ext_process_nfc_init_rsp(p_ntf, p_len);
-
-  if (p_ntf[0] == 0x61 && p_ntf[1] == 0x05 && p_ntf[2] == 0x15 &&
+  if(p_ntf[0] == 0x42 && p_ntf[1] == 0x01 && p_ntf[2] == 0x01 && p_ntf[3] == 0x00) {
+    if(nxpncihal_ctrl.hal_ext_enabled == TRUE && nfcFL.chipType == sn100u) {
+      nxpncihal_ctrl.nci_info.wait_for_ntf = TRUE;
+      NXPLOG_NCIHAL_D(" Mode set received");
+    }
+  } else if (p_ntf[0] == 0x61 && p_ntf[1] == 0x05 && p_ntf[2] == 0x15 &&
       p_ntf[4] == 0x01 && p_ntf[5] == 0x06 && p_ntf[6] == 0x06) {
     NXPLOG_NCIHAL_D("> Going through workaround - notification of ISO 15693");
     icode_detected = 0x01;
@@ -625,9 +630,6 @@ NFCSTATUS phNxpNciHal_write_ext(uint16_t* cmd_len, uint8_t* p_cmd_data,
                                 uint16_t* rsp_len, uint8_t* p_rsp_data) {
   NFCSTATUS status = NFCSTATUS_SUCCESS;
 
-  unsigned long retval = 0;
-  GetNxpNumValue(NAME_MIFARE_READER_ENABLE, &retval, sizeof(unsigned long));
-
   phNxpNciHal_NfcDep_cmd_ext(p_cmd_data, cmd_len);
 
   if (phNxpDta_IsEnable() == true) {
@@ -690,17 +692,23 @@ NFCSTATUS phNxpNciHal_write_ext(uint16_t* cmd_len, uint8_t* p_cmd_data,
     }
   }
 
-  if (retval == 0x01 && p_cmd_data[0] == 0x21 && p_cmd_data[1] == 0x00) {
-    NXPLOG_NCIHAL_D("Going through extns - Adding Mifare in RF Discovery");
-    p_cmd_data[2] += 3;
-    p_cmd_data[3] += 1;
-    p_cmd_data[*cmd_len] = 0x80;
-    p_cmd_data[*cmd_len + 1] = 0x01;
-    p_cmd_data[*cmd_len + 2] = 0x80;
-    *cmd_len += 3;
-    status = NFCSTATUS_SUCCESS;
-    NXPLOG_NCIHAL_D(
-        "Going through extns - Adding Mifare in RF Discovery - END");
+  if ((p_cmd_data[0] == 0x21 && p_cmd_data[1] == 0x00) &&
+      (nxpprofile_ctrl.profile_type == NFC_FORUM_PROFILE)) {
+    unsigned long retval = 0;
+
+    GetNxpNumValue(NAME_MIFARE_READER_ENABLE, &retval, sizeof(unsigned long));
+    if(retval == 0x01) {
+      NXPLOG_NCIHAL_D("Going through extns - Adding Mifare in RF Discovery");
+      p_cmd_data[2] += 3;
+      p_cmd_data[3] += 1;
+      p_cmd_data[*cmd_len] = 0x80;
+      p_cmd_data[*cmd_len + 1] = 0x01;
+      p_cmd_data[*cmd_len + 2] = 0x80;
+      *cmd_len += 3;
+      status = NFCSTATUS_SUCCESS;
+      NXPLOG_NCIHAL_D(
+          "Going through extns - Adding Mifare in RF Discovery - END");
+    }
   } else if (p_cmd_data[3] == 0x81 && p_cmd_data[4] == 0x01 &&
              p_cmd_data[5] == 0x03) {
     NXPLOG_NCIHAL_D("> Going through the set host list");
@@ -809,17 +817,6 @@ NFCSTATUS phNxpNciHal_write_ext(uint16_t* cmd_len, uint8_t* p_cmd_data,
     phNxpNciHal_print_packet("RECV", p_rsp_data, 5);
     //        status = NFCSTATUS_FAILED;
     NXPLOG_NCIHAL_D("> Going through workaround - Dirty Set Config - End ");
-  } else if (p_cmd_data[0] == 0x21 && p_cmd_data[1] == 0x00) {
-    NXPLOG_NCIHAL_D(
-        "> Going through workaround - Add Mifare Classic in Discovery Map");
-    p_cmd_data[*cmd_len] = 0x80;
-    p_cmd_data[*cmd_len + 1] = 0x01;
-    p_cmd_data[*cmd_len + 2] = 0x80;
-    p_cmd_data[5] = 0x01;
-    p_cmd_data[6] = 0x01;
-    p_cmd_data[2] += 3;
-    p_cmd_data[3] += 1;
-    *cmd_len += 3;
   } else if (*cmd_len == 3 && p_cmd_data[0] == 0x00 && p_cmd_data[1] == 0x00 &&
              p_cmd_data[2] == 0x00) {
     NXPLOG_NCIHAL_D("> Going through workaround - ISO-DEP Presence Check ");
@@ -966,6 +963,7 @@ static void hal_extns_write_rsp_timeout_cb(uint32_t timerId, void* pContext) {
 
   return;
 }
+
 /*******************************************************************************
  **
  ** Function:        request_EEPROM()
@@ -1193,26 +1191,51 @@ retryget:
  **
  ********************************************************************************/
 int phNxpNciHal_CheckFwRegFlashRequired(uint8_t* fw_update_req,
-                                        uint8_t* rf_update_req) {
-  int status = NFCSTATUS_OK;
-  UNUSED_PROP(rf_update_req);
+                                        uint8_t* rf_update_req,
+                                        uint8_t skipEEPROMRead) {
   NXPLOG_NCIHAL_D("phNxpNciHal_CheckFwRegFlashRequired() : enter");
-  status = phDnldNfc_InitImgInfo();
-  NXPLOG_NCIHAL_D("FW version of the libpn5xx.so binary = 0x%x", wFwVer);
-  NXPLOG_NCIHAL_D("FW version found on the device = 0x%x", wFwVerRsp);
-  /* Consider for each chip type */
-  if(status != NFCSTATUS_SUCCESS)
-      *fw_update_req = false;
-  else
-      *fw_update_req = (((wFwVerRsp & 0x0000FFFF) != wFwVer) ? true : false);
+  UNUSED_PROP(rf_update_req);
+  int status = NFCSTATUS_OK;
+  long option;
+  if (fpRegRfFwDndl != NULL) {
+    status = fpRegRfFwDndl(fw_update_req, rf_update_req, skipEEPROMRead);
+  } else {
+    status = phDnldNfc_InitImgInfo();
+    NXPLOG_NCIHAL_D("FW version of the libsn100u.so binary = 0x%x", wFwVer);
+    NXPLOG_NCIHAL_D("FW version found on the device = 0x%x", wFwVerRsp);
 
-  if (false == *fw_update_req) {
+  if (!GetNxpNumValue(NAME_NXP_FLASH_CONFIG, &option, sizeof(unsigned long))) {
+    NXPLOG_NCIHAL_D("Flash option not found; giving default value");
+    option = 1;
+  }
+    switch (option) {
+      case FLASH_UPPER_VERSION:
+        wFwUpdateReq = (utf8_t)wFwVer > (utf8_t)wFwVerRsp ? true : false;
+        break;
+      case FLASH_DIFFERENT_VERSION:
+        wFwUpdateReq = ((wFwVerRsp & 0x0000FFFF) != wFwVer) ? true : false;
+        break;
+      case FLASH_ALWAYS:
+        wFwUpdateReq = true;
+        break;
+      default:
+        NXPLOG_NCIHAL_D("Invalid flash option selected");
+        status = NFCSTATUS_INVALID_PARAMETER;
+        break;
+    }
+  }
+  *fw_update_req = wFwUpdateReq;
+
+  if (false == wFwUpdateReq) {
     NXPLOG_NCIHAL_D("FW update not required");
     phDnldNfc_ReSetHwDevHandle();
+  } else {
+    property_set("nfc.fw.downloadmode_force", "1");
   }
 
-  NXPLOG_NCIHAL_D("phNxpNciHal_CheckFwRegFlashRequired() : exit - status = %x ",
-                  status);
+  NXPLOG_NCIHAL_D("phNxpNciHal_CheckFwRegFlashRequired() : exit - status = %x "
+                   "wFwUpdateReq=%u, wRfUpdateReq=%u", status, *fw_update_req,
+                  *rf_update_req);
   return status;
 }
 

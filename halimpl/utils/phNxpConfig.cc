@@ -89,9 +89,10 @@ const char config_timestamp_path[] =
         "/data/vendor/nfc/libnfc-nxpConfigState.bin";
 /*const char default_nxp_config_path[] =
         "/vendor/etc/libnfc-nxp.conf";*/
-const char nxp_rf_config_path[] =
+char nxp_rf_config_path[256] =
         "/system/vendor/libnfc-nxp_RF.conf";
-
+char Fw_Lib_Path[256] =
+        "/vendor/lib/libsn100u_fw.so";
 /**
  *  @brief target platform ID values.
  */
@@ -134,6 +135,7 @@ typedef enum
   TARGET_MSM8940                       = 313, /**< 8940 target */
   TARGET_SDM660                        = 317, /**< SDM660 target */
   TARGET_SDM670                        = 336, /**< SDM670 target */
+  TARGET_SM6150                        = 355, /**< SM6150 target */
   TARGET_SDM630                        = 318, /**< SDM630 target */
   TARGET_SDM845                        = 321, /**< SDM845 target */
   TARGET_SM8150                        = 339, /**< SM8150 target */
@@ -401,6 +403,7 @@ int CNfcConfig::getconfiguration_id (char * config_file)
             config_id = QRD_TYPE_1;
             break;
         case TARGET_SM8150:
+        case TARGET_SM6150:
             config_id = QRD_TYPE_SN100;
             strlcpy(config_file, config_name_qrd_SN100, MAX_DATA_CONFIG_PATH_LEN);
             break;
@@ -434,8 +437,8 @@ int CNfcConfig::getconfiguration_id (char * config_file)
             break;
         }
     }
-    // if target is MTP platform then config id is assigned here
-    else if (0 == strncmp(target_type, MTP_HW_PLATFORM, MAX_SOC_INFO_NAME_LEN)) {
+    // if target is not QRD platform then default config id is assigned here
+    else {
         switch (idx)
         {
         case TARGET_GENERIC:
@@ -455,6 +458,7 @@ int CNfcConfig::getconfiguration_id (char * config_file)
             }
             break;
         case TARGET_SM8150:
+        case TARGET_SM6150:
             config_id = MTP_TYPE_SN100;
             strlcpy(config_file, config_name_mtp_SN100, MAX_DATA_CONFIG_PATH_LEN);
             break;
@@ -1404,6 +1408,36 @@ extern "C" int GetNxpNumValue(const char* name, void* pValue,
       return false;
   }
   return true;
+}
+
+/*******************************************************************************
+**
+** Function:    setNxpRfConfigPath
+**
+** Description: sets the path of the NXP RF config file
+**
+** Returns:     none
+**
+*******************************************************************************/
+extern "C" void setNxpRfConfigPath(const char* name) {
+  memset((void *)nxp_rf_config_path, 0, sizeof(nxp_rf_config_path));
+  strlcpy((char *)nxp_rf_config_path, name, sizeof(nxp_rf_config_path));
+  ALOGD("nxp_rf_config_path=%s", nxp_rf_config_path);
+}
+
+/*******************************************************************************
+**
+** Function:    setNxpFwConfigPath
+**
+** Description: sets the path of the NXP FW library
+**
+** Returns:     none
+**
+*******************************************************************************/
+extern "C" void setNxpFwConfigPath(const char* name) {
+  memset((void *)Fw_Lib_Path, 0, sizeof(Fw_Lib_Path));
+  strlcpy((char *)Fw_Lib_Path, name, sizeof(Fw_Lib_Path));
+  ALOGD("Fw_Lib_Path=%s", Fw_Lib_Path);
 }
 
 /*******************************************************************************
