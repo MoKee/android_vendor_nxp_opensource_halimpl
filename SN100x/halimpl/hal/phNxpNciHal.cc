@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2012-2018 NXP Semiconductors
+ * Copyright (C) 2012-2019 NXP Semiconductors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -1037,7 +1037,7 @@ int phNxpNciHal_write(uint16_t data_len, const uint8_t* p_data) {
                                         nxpncihal_ctrl.p_cmd_data);
   CONCURRENCY_UNLOCK();
 
-  if (icode_send_eof == 1) {
+  if (nfcFL.chipType != sn100u && icode_send_eof == 1) {
     usleep(10000);
     icode_send_eof = 2;
     phNxpNciHal_send_ext_cmd(3, cmd_icode_eof);
@@ -1242,7 +1242,7 @@ static void phNxpNciHal_read_complete(void* pContext,
       }
       /* Unlock semaphore only for responses*/
       if ((nxpncihal_ctrl.p_rx_data[0x00] & NCI_MT_MASK) == NCI_MT_RSP ||
-          ((icode_detected == true) && (icode_send_eof == 3))) {
+          ((nfcFL.chipType != sn100u) && (icode_detected == true) && (icode_send_eof == 3))) {
         /* Unlock semaphore */
         SEM_POST(&(nxpncihal_ctrl.ext_cb_data));
       }
@@ -1451,14 +1451,12 @@ int phNxpNciHal_core_initialized(uint8_t* p_core_init_rsp_params) {
       goto retry_core_init;
     }
   }
-  if(nfcFL.chipType != sn100u) {
-    status = phNxpNciHal_send_ext_cmd(sizeof(cmd_ven_enable), cmd_ven_enable);
-      if (status != NFCSTATUS_SUCCESS) {
-        NXPLOG_NCIHAL_E("CMD_VEN_ENABLE: Failed");
-        retry_core_init_cnt++;
-        goto retry_core_init;
-      }
-  }
+  status = phNxpNciHal_send_ext_cmd(sizeof(cmd_ven_enable), cmd_ven_enable);
+    if (status != NFCSTATUS_SUCCESS) {
+      NXPLOG_NCIHAL_E("CMD_VEN_ENABLE: Failed");
+      retry_core_init_cnt++;
+      goto retry_core_init;
+    }
   config_access = false;
 
   if (fw_download_success == 1) {
@@ -1789,7 +1787,6 @@ int phNxpNciHal_core_initialized(uint8_t* p_core_init_rsp_params) {
         NXPLOG_NCIHAL_E("NXP Update MW EEPROM Proprietary Ext failed");
       }
     }
-    fw_dwnld_flag = false;
 
   retlen = 0;
   config_access = false;
@@ -1888,32 +1885,32 @@ int phNxpNciHal_core_initialized(uint8_t* p_core_init_rsp_params) {
 
     config_access = false;
   {
-    if(true == setConfigAlways)
-    {
-        if(nfcFL.chipType == sn100u)
-        {
-          status = phNxpNciHal_ext_send_sram_config_to_flash();
-        }
-        status = phNxpNciHal_send_ext_cmd(sizeof(cmd_reset_nci), cmd_reset_nci);
-        if (status == NFCSTATUS_SUCCESS) {
-            if (nxpncihal_ctrl.nci_info.nci_version == NCI_VERSION_2_0) {
-              status = phNxpNciHal_send_ext_cmd(sizeof(cmd_init_nci2_0), cmd_init_nci2_0);
-            } else {
+    if(isNxpRFConfigModified() || isNxpConfigModified()
+            || fw_dwnld_flag || setConfigAlways){
+      if(nfcFL.chipType == sn100u) {
+        status = phNxpNciHal_ext_send_sram_config_to_flash();
+      }
+      status = phNxpNciHal_send_ext_cmd(sizeof(cmd_reset_nci), cmd_reset_nci);
+      if (status == NFCSTATUS_SUCCESS) {
+        if (nxpncihal_ctrl.nci_info.nci_version == NCI_VERSION_2_0) {
+          status = phNxpNciHal_send_ext_cmd(sizeof(cmd_init_nci2_0), cmd_init_nci2_0);
+        } else {
           status = phNxpNciHal_send_ext_cmd(sizeof(cmd_init_nci), cmd_init_nci);
         }
         if (status != NFCSTATUS_SUCCESS)
-            return status;
-        } else {
-          return NFCSTATUS_FAILED;
-        }
+          return status;
+      } else {
+        return NFCSTATUS_FAILED;
+      }
+    }
+    status = phNxpNciHal_send_get_cfgs();
+    if (status == NFCSTATUS_SUCCESS) {
+      NXPLOG_NCIHAL_E("Send get Configs SUCCESS");
+    } else {
+      NXPLOG_NCIHAL_E("Send get Configs FAILED");
+    }
   }
-  status = phNxpNciHal_send_get_cfgs();
-  if (status == NFCSTATUS_SUCCESS) {
-    NXPLOG_NCIHAL_E("Send get Configs SUCCESS");
-  } else {
-    NXPLOG_NCIHAL_E("Send get Configs FAILED");
-  }
- }
+  fw_dwnld_flag = false;
   retry_core_init_cnt = 0;
 
   if (buffer) {
@@ -2091,7 +2088,7 @@ int phNxpNciHal_close(bool bShutdown) {
   };
   static uint8_t cmd_reset_nci[] = {0x20, 0x00, 0x01, 0x00};
   static uint8_t cmd_ven_disable_nci[] = {0x20, 0x02, 0x05, 0x01,
-                                         0xA0, 0x07, 0x01, 0x02};
+                                         0xA0, 0x07, 0x01, 0x00};
   uint8_t length = 0;
   uint8_t numPrms = 0;
   uint8_t ptr = 4;
@@ -2130,12 +2127,10 @@ int phNxpNciHal_close(bool bShutdown) {
       status = phNxpNciHal_ext_send_sram_config_to_flash();
 #endif
   CONCURRENCY_LOCK();
-  if(nfcFL.chipType != sn100u) {
-    if(!bShutdown){
-      status = phNxpNciHal_send_ext_cmd(sizeof(cmd_ven_disable_nci), cmd_ven_disable_nci);
-      if(status != NFCSTATUS_SUCCESS) {
-        NXPLOG_NCIHAL_E("CMD_VEN_DISABLE_NCI: Failed");
-      }
+  if(!bShutdown){
+    status = phNxpNciHal_send_ext_cmd(sizeof(cmd_ven_disable_nci), cmd_ven_disable_nci);
+    if(status != NFCSTATUS_SUCCESS) {
+      NXPLOG_NCIHAL_E("CMD_VEN_DISABLE_NCI: Failed");
     }
   }
   if (nfcFL.nfccFL._NFCC_I2C_READ_WRITE_IMPROVEMENT &&
@@ -2797,6 +2792,31 @@ int phNxpNciHal_ioctl(long arg, void* p_data) {
         phNxpNciHal_setNxpTransitConfig(pInpOutData->inp.data.transitConfig.val);
         ret = 0;
         break;
+#if(NXP_EXTNS == TRUE)
+    case HAL_NFC_IOCTL_GET_SEMS_OUTPUT_LEN:
+        if(gpEseAdapt !=  NULL)
+        {
+          ret = gpEseAdapt->HalIoctl(HAL_ESE_IOCTL_GET_SEMS_OUTPUT_LEN,pInpOutData);
+          NXPLOG_NCIHAL_D("HAL_ESE_IOCTL_GET_SEMS_OUTPUT Lenght of SEMS file is  %d: \n",pInpOutData->out.data.nciRsp.rsp_len);
+        }
+        break;
+    case HAL_NFC_IOCTL_READ_SEMS_OUTPUT:
+        if(gpEseAdapt !=  NULL)
+        {
+          ret = gpEseAdapt->HalIoctl(HAL_ESE_IOCTL_READ_SEMS_OUTPUT,pInpOutData);
+        }
+        break;
+    case HAL_NFC_IOCTL_GET_SEMS_STATUS:
+        if(gpEseAdapt !=  NULL)
+        {
+          ret = gpEseAdapt->HalIoctl(HAL_ESE_IOCTL_GET_SEMS_STATUS,pInpOutData);
+        }
+        break;
+    case HAL_NFC_IOCTL_GET_NXP_CONFIG:
+      phNxpNciHal_getNxpConfig(pInpOutData);
+      ret = 0;
+      break;
+#endif
     default:
       NXPLOG_NCIHAL_E("%s : Wrong arg = %ld", __func__, arg);
       break;
@@ -3868,7 +3888,7 @@ void phNxpNciHal_configNciParser(bool enable)
         }
         if(lx_debug_cfg & LX_DEBUG_CFG_ENABLE_L2_EVENT)
         {
-            NXPLOG_NCIHAL_D("Enable L2 RF NTF debugs");
+            NXPLOG_NCIHAL_D("Enable L2 RF NTF debugs (CE)");
         }
         if(lx_debug_cfg & LX_DEBUG_CFG_ENABLE_FELICA_RF)
         {
@@ -3878,9 +3898,9 @@ void phNxpNciHal_configNciParser(bool enable)
         {
             NXPLOG_NCIHAL_D("Enable Felica System Code");
         }
-        if(lx_debug_cfg & LX_DEBUG_CFG_ENABLE_7816_4_RETCODE)
+        if(lx_debug_cfg & LX_DEBUG_CFG_ENABLE_L2_EVENT_READER)
         {
-            NXPLOG_NCIHAL_D("Enable 7816-4 RetCode");
+            NXPLOG_NCIHAL_D("Enable L2 RF NTF debugs (Reader)");
         }
         cmd_lxdebug[7] = lx_debug_cfg & ~LX_DEBUG_CFG_MASK_RSSI;
         if((lx_debug_cfg & LX_DEBUG_CFG_MASK_RSSI) == 0x0100)
@@ -3993,5 +4013,22 @@ NFCSTATUS phNxpNciHal_PropEsePowerCycle(void) {
     NXPLOG_NCIHAL_E("EsePowerCycle failed");
   }
   return status;
+}
+/******************************************************************************
+ * Function         phNxpNciHal_getNxpConfig
+ *
+ * Description      This function can be used by HAL to inform
+ *                 to update vendor configuration parametres
+ *
+ * Returns          void.
+ *
+ ******************************************************************************/
+void phNxpNciHal_getNxpConfig(nfc_nci_IoctlInOutData_t *pInpOutData) {
+  unsigned long num = 0;
+  memset(&pInpOutData->out.data.nxpConfigs, 0x00, sizeof(pInpOutData->out.data.nxpConfigs));
+  NXPLOG_NCIHAL_D("phNxpNciHal_getNxpConfig: Enter");
+  if (GetNxpNumValue(NAME_NXP_SE_COLD_TEMP_ERROR_DELAY, &num, sizeof(num))) {
+    pInpOutData->out.data.nxpConfigs.eSeLowTempErrorDelay = num;
+  }
 }
 #endif
