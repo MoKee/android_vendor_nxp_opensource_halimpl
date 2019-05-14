@@ -23,7 +23,7 @@
 #define MAX_IOCTL_TRANSCEIVE_RESP_LEN 256
 #define MAX_ATR_INFO_LEN              128
 #define MAX_SEMS_OUTPUT_READ_LEN      1024
-
+#define HAL_NFC_IOCTL_FIRST_EVT 0xA0
 enum {
     HAL_NFC_IOCTL_NCI_TRANSCEIVE = 0xF1,
     HAL_NFC_IOCTL_NFC_JCOP_DWNLD,
@@ -33,7 +33,7 @@ enum {
 };
 
 enum {
-  HAL_NFC_IOCTL_P61_IDLE_MODE = 0,
+  HAL_NFC_IOCTL_P61_IDLE_MODE = HAL_NFC_IOCTL_FIRST_EVT,
   HAL_NFC_IOCTL_P61_WIRED_MODE,
   HAL_NFC_IOCTL_P61_PWR_MODE,
   HAL_NFC_IOCTL_P61_DISABLE_MODE,
@@ -65,6 +65,8 @@ enum {
   HAL_NFC_IOCTL_ESE_UPDATE_COMPLETE,
 #if (NXP_EXTNS == TRUE)
  HAL_NFC_IOCTL_SET_TRANSIT_CONFIG,
+ HAL_NFC_IOCTL_GET_ESE_UPDATE_STATE,
+ HAL_NFC_IOCTL_GET_NXP_CONFIG,
 #endif
  HAL_NFC_GET_NXP_CONFIG,
  HAL_NFC_IOCTL_NFCEE_SESSION_RESET,
@@ -90,7 +92,7 @@ typedef struct
 
 #if(NXP_EXTNS == TRUE)
 /*
- * nxp_nfc_config_t shall contain the respective flag value from the
+ * nxp_nfc_config_t for NQx shall contain the respective flag value from the
  * libnfc-nxp.conf
  */
 typedef struct {
@@ -172,7 +174,7 @@ typedef struct {
   uint8_t uicc_wired_prt_mask;
   uint8_t wired_mode_rf_field_enable;
   uint8_t aid_block_route;
-} nxp_nfc_config_t;
+} nq_nfc_config_t;
 
 /*
  * outputData_t :ioctl has multiple commands/responses
@@ -189,7 +191,8 @@ typedef union{
     uint8_t             chipType;
 #if(NXP_EXTNS == TRUE)
     nfc_nci_SemsRsp_t   semsRsp;
-    nxp_nfc_config_t nxpConfigs;
+    nxp_nfc_config_t    nxpConfigs;
+    nq_nfc_config_t     nqConfigs;
 #endif
 }outputData_t;
 

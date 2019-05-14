@@ -2793,6 +2793,7 @@ int phNxpNciHal_ioctl(long arg, void* p_data) {
         ret = 0;
         break;
 #if(NXP_EXTNS == TRUE)
+         #ifdef ENABLE_ESE_CLIENT
     case HAL_NFC_IOCTL_GET_SEMS_OUTPUT_LEN:
         if(gpEseAdapt !=  NULL)
         {
@@ -2812,6 +2813,7 @@ int phNxpNciHal_ioctl(long arg, void* p_data) {
           ret = gpEseAdapt->HalIoctl(HAL_ESE_IOCTL_GET_SEMS_STATUS,pInpOutData);
         }
         break;
+        #endif
     case HAL_NFC_IOCTL_GET_NXP_CONFIG:
       phNxpNciHal_getNxpConfig(pInpOutData);
       ret = 0;
