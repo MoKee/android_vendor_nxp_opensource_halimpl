@@ -22,14 +22,18 @@
 #define MAX_IOCTL_TRANSCEIVE_CMD_LEN  256
 #define MAX_IOCTL_TRANSCEIVE_RESP_LEN 256
 #define MAX_ATR_INFO_LEN              128
-
+#define MAX_SEMS_OUTPUT_READ_LEN      1024
+#define HAL_NFC_IOCTL_FIRST_EVT 0xA0
 enum {
     HAL_NFC_IOCTL_NCI_TRANSCEIVE = 0xF1,
     HAL_NFC_IOCTL_NFC_JCOP_DWNLD,
+    HAL_NFC_IOCTL_GET_SEMS_OUTPUT_LEN,
+    HAL_NFC_IOCTL_READ_SEMS_OUTPUT,
+    HAL_NFC_IOCTL_GET_SEMS_STATUS,
 };
 
 enum {
-  HAL_NFC_IOCTL_P61_IDLE_MODE = 0,
+  HAL_NFC_IOCTL_P61_IDLE_MODE = HAL_NFC_IOCTL_FIRST_EVT,
   HAL_NFC_IOCTL_P61_WIRED_MODE,
   HAL_NFC_IOCTL_P61_PWR_MODE,
   HAL_NFC_IOCTL_P61_DISABLE_MODE,
@@ -61,6 +65,8 @@ enum {
   HAL_NFC_IOCTL_ESE_UPDATE_COMPLETE,
 #if (NXP_EXTNS == TRUE)
  HAL_NFC_IOCTL_SET_TRANSIT_CONFIG,
+ HAL_NFC_IOCTL_GET_ESE_UPDATE_STATE,
+ HAL_NFC_IOCTL_GET_NXP_CONFIG,
 #endif
  HAL_NFC_GET_NXP_CONFIG,
  HAL_NFC_IOCTL_NFCEE_SESSION_RESET,
@@ -84,14 +90,42 @@ typedef struct
     uint8_t  p_cmd[MAX_IOCTL_TRANSCEIVE_CMD_LEN];
 } nfc_nci_ExtnCmd_t;
 
+#if(NXP_EXTNS == TRUE)
 /*
- * nfc_nci_ExtnRsp_t shall contain response for command sent in transceive command
+ * nxp_nfc_config_t for NQx shall contain the respective flag value from the
+ * libnfc-nxp.conf
+ */
+typedef struct {
+  uint8_t eSeLowTempErrorDelay;
+} nxp_nfc_config_t;
+
+/*
+ * Read the SEMS ouput response file length
+ * vendor se hal directory
  */
 typedef struct
 {
+    uint32_t semsLen;
+} nfc_nci_SemsCmd_t;
+
+/*
+ * Read the SEMS ouput response file data from se hal to nfc
+ * vendor se hal directory to nfc folder
+ */
+typedef struct {
+  uint8_t status;
+  uint32_t rsp_len;
+  char     semsOutResp[MAX_SEMS_OUTPUT_READ_LEN];
+} nfc_nci_SemsRsp_t;
+#endif
+/*
+ * nfc_nci_ExtnRsp_t shall contain response for command sent in transceive command
+ */
+typedef struct {
     uint16_t rsp_len;
     uint8_t  p_rsp[MAX_IOCTL_TRANSCEIVE_RESP_LEN];
 } nfc_nci_ExtnRsp_t;
+
 /*
  * TransitConfig_t shall contain transit config value and transit
  * Configuration length
@@ -110,6 +144,9 @@ typedef union {
     nfc_nci_ExtnCmd_t nciCmd;
     uint32_t          timeoutMilliSec;
     long              nfcServicePid;
+#if(NXP_EXTNS == TRUE)
+    nfc_nci_SemsCmd_t semsCmd;
+#endif
     TransitConfig_t transitConfig;
 }InputData_t;
 /*
@@ -137,7 +174,7 @@ typedef struct {
   uint8_t uicc_wired_prt_mask;
   uint8_t wired_mode_rf_field_enable;
   uint8_t aid_block_route;
-} nxp_nfc_config_t;
+} nq_nfc_config_t;
 
 /*
  * outputData_t :ioctl has multiple commands/responses
@@ -152,7 +189,11 @@ typedef union{
     uint16_t            fwDwnldStatus;
     uint16_t            fwMwVerStatus;
     uint8_t             chipType;
+#if(NXP_EXTNS == TRUE)
+    nfc_nci_SemsRsp_t   semsRsp;
     nxp_nfc_config_t    nxpConfigs;
+    nq_nfc_config_t     nqConfigs;
+#endif
 }outputData_t;
 
 /*
